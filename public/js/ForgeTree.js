@@ -31,6 +31,7 @@ $(document).ready(function () {
   })
 
   $('#hiddenUploadField').change(function () {
+    // console.log('hiddenUploadField has changed ');
     var node = $('#appBuckets').jstree(true).get_selected(true)[0];
     var _this = this;
     if (_this.files.length == 0) return;
@@ -112,17 +113,33 @@ function prepareAppBucketTree() {
       $("#forgeViewer").empty();
       var urn = data.node.id;
       getForgeToken(function (access_token) {
+        const url = 
+          'https://developer.api.autodesk.com/modelderivative/v2/designdata/' +
+          urn +
+          '/manifest';
         jQuery.ajax({
-          url: 'https://developer.api.autodesk.com/modelderivative/v2/designdata/' + urn + '/manifest',
+          url: url,
           headers: { 'Authorization': 'Bearer ' + access_token },
           success: function (res) {
-            if (res.progress === 'success' || res.progress === 'complete') launchViewer(urn);
-            else $("#forgeViewer").html('The translation job still running: ' + res.progress + '. Please try again in a moment.');
+            if (res.progress === 'success' || res.progress === 'complete') {
+              launchViewer(urn);
+            } else {
+              $("#forgeViewer").html(
+                'The translation job is still running: ' +
+                res.progress +
+                '. Please try again in a moment.'
+              );
+            }
           },
           error: function (err) {
             var msgButton = 'This file is not translated yet! ' +
-              '<button class="btn btn-xs btn-info" onclick="translateObject()"><span class="glyphicon glyphicon-eye-open"></span> ' +
-              'Start translation</button>'
+              '<button ' +
+              'class="btn btn-xs btn-info" ' + 
+              'onclick="translateObject()"' + 
+              '>' + 
+              '<span class="glyphicon glyphicon-eye-open"></span> ' +
+              'Start translation' + 
+              '</button>'
             $("#forgeViewer").html(msgButton);
           }
         });
@@ -143,7 +160,14 @@ function autodeskCustomMenu(autodeskNode) {
             uploadFile();
           },
           icon: 'glyphicon glyphicon-cloud-upload'
-        }
+        },
+        deleteBucket: {
+          label: "Delete bucket",
+          action: function () {
+            deleteBucket();
+          },
+          icon: 'glyphicon glyphicon-trash'
+        },
       };
       break;
     case "object":
@@ -165,6 +189,30 @@ function autodeskCustomMenu(autodeskNode) {
 
 function uploadFile() {
   $('#hiddenUploadField').click();
+}
+
+function deleteBucket() {
+  var node = $('#appBuckets').jstree(true).get_selected(true)[0];
+  var _this = this;
+  switch (node.type) {
+    case 'bucket':
+      // console.log('we want to delete bucket ' + node.id);
+      $.ajax({
+        url: '/api/forge/oss/delbucket?' + $.param({"bucketKey": node.id}),
+        processData: false,
+        contentType: false,
+        type: 'POST',
+        success: function (data) {
+          // console.log('success reported from deleting bucket ' + node.id);
+          $('#appBuckets').jstree(true).refresh();
+          _this.value = '';
+        },
+        error: function (err) {
+          console.log(err);
+        }          
+      });
+      break;
+  }
 }
 
 function translateObject(node) {

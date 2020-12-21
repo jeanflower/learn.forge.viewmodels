@@ -38,7 +38,8 @@ router.use(async (req, res, next) => {
 });
 
 // POST /api/forge/modelderivative/jobs - submits a new translation job for given object URN.
-// Request body must be a valid JSON in the form of { "objectName": "<translated-object-urn>" }.
+// Request body must be a valid JSON in the form of 
+// { "objectName": "<translated-object-urn>" }.
 router.post('/jobs', async (req, res, next) => {
     let job = new JobPayload();
     job.input = new JobPayloadInput();
@@ -49,8 +50,14 @@ router.post('/jobs', async (req, res, next) => {
     job.output.formats[0].type = 'svf';
     job.output.formats[0].views = ['2d', '3d'];
     try {
-        // Submit a translation job using [DerivativesApi](https://github.com/Autodesk-Forge/forge-api-nodejs-client/blob/master/docs/DerivativesApi.md#translate).
-        await new DerivativesApi().translate(job, {}, req.oauth_client, req.oauth_token);
+        // Submit a translation job using 
+        // [DerivativesApi](https://github.com/Autodesk-Forge/forge-api-nodejs-client/blob/master/docs/DerivativesApi.md#translate).
+        await new DerivativesApi().translate(
+          job, 
+          {}, 
+          req.oauth_client, 
+          req.oauth_token,
+        );
         res.status(200).end();
     } catch(err) {
         next(err);

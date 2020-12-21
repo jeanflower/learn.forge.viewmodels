@@ -27,6 +27,8 @@ const config = require('../../config');
  */
 function getClient(scopes) {
     const { client_id, client_secret } = config.credentials;
+    // console.log('client_id = ' + client_id);
+    // console.log('client_secret = ' + client_secret);
     return new AuthClientTwoLegged(client_id, client_secret, scopes || config.scopes.internal);
 }
 
@@ -37,9 +39,20 @@ async function getToken(scopes) {
         return cache[key];
     }
     const client = getClient(scopes);
+    // console.log('go to authenticate');
     let credentials = await client.authenticate();
+    // console.log('credentials = ' + JSON.stringify(credentials));
     cache[key] = credentials;
     setTimeout(() => { delete cache[key]; }, credentials.expires_in * 1000);
+    /*
+    console.log(
+      'access token for scopes ' + 
+      JSON.stringify(scopes) + 
+      ' is ' + 
+      JSON.stringify(credentials)
+    );
+    */
+
     return credentials;
 }
 

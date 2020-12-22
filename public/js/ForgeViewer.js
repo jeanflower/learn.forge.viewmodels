@@ -16,31 +16,61 @@
 // UNINTERRUPTED OR ERROR FREE.
 /////////////////////////////////////////////////////////////////////
 
-var viewer;
-
-function launchViewer(urn) {
+function launchViewer(urn, viewerTag) {
   var options = {
     env: 'AutodeskProduction',
     getAccessToken: getForgeToken
   };
 
+  const element = document.getElementById(viewerTag);
+  console.log('go to Initializer for ' + urn + ' in doc element with tag '+ viewerTag);
+
+  try{
   Autodesk.Viewing.Initializer(options, () => {
-    viewer = new Autodesk.Viewing.GuiViewer3D(document.getElementById('forgeViewer'));
+    var viewer = new Autodesk.Viewing.GuiViewer3D(element);
     viewer.start();
     var documentId = 'urn:' + urn;
-    Autodesk.Viewing.Document.load(documentId, onDocumentLoadSuccess, onDocumentLoadFailure);
+    console.log('put view in doc element with tag '+ viewerTag);
+    Autodesk.Viewing.Document.load(
+      documentId, 
+      function (doc){
+        console.log('onDocumentLoadSuccess with tag '+ viewerTag);
+        return onDocumentLoadSuccess(doc, viewer);
+      },
+      function (err){
+        console.log('onDocumentLoadFailure with tag '+ viewerTag);
+        return onDocumentLoadFailure(err);
+      },
+    );
   });
+  } catch(err){
+    console.log('onDocumentLoadError - caught error'+ err);
+  }
 }
 
-function onDocumentLoadSuccess(doc) {
+function onDocumentLoadSuccess(doc, viewer) {
   var viewables = doc.getRoot().getDefaultGeometry();
   viewer.loadDocumentNode(doc, viewables).then(i => {
-    // documented loaded, any action?
+    /*
+    const getCircularReplacer = () => {
+      const seen = new WeakSet();
+      return (key, value) => {
+        if (typeof value === "object" && value !== null) {
+          if (seen.has(value)) {
+            return;
+          }
+          seen.add(value);
+        }
+        return value;
+      };
+    };
+    console.log('onDocumentLoadSuccess i = ' + JSON.stringify(i, getCircularReplacer()));
+    */
   });
 }
 
 function onDocumentLoadFailure(viewerErrorCode) {
-  console.error('onDocumentLoadFailure() - errorCode:' + viewerErrorCode);
+  console.log('onDocumentLoadFailure() - errorCode:' + viewerErrorCode);
 }
 
 function getForgeToken(callback) {

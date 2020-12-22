@@ -77,6 +77,67 @@ function createNewBucket() {
   });
 }
 
+function showNotYetTranslated(err) {
+  var msgButton = 'This file is not translated yet! ' +
+    '<button ' +
+    'class="btn btn-xs btn-info" ' + 
+    'onclick="translateObject()"' + 
+    '>' + 
+    '<span class="glyphicon glyphicon-eye-open"></span> ' +
+    'Start translation' + 
+    '</button>'
+  $("#forgeViewer").html(msgButton);
+}
+
+const nodeTypesIcons = {
+  'default': {
+    'icon': 'glyphicon glyphicon-question-sign'
+  },
+  '#': {
+    'icon': 'glyphicon glyphicon-cloud'
+  },
+  'bucket': {
+    'icon': 'glyphicon glyphicon-folder-open'
+  },
+  'object': {
+    'icon': 'glyphicon glyphicon-file'
+  }
+};
+
+function objectNodeActivated(node){
+  $("#forgeViewer").empty();
+  var urn = node.id;
+  getForgeToken(function (access_token) {
+    const url = 
+      'https://developer.api.autodesk.com/modelderivative/v2/designdata/' +
+      urn +
+      '/manifest';
+    jQuery.ajax({
+      url: url,
+      headers: { 'Authorization': 'Bearer ' + access_token },
+      success: function (res) {
+        if (res.progress === 'success' || res.progress === 'complete') {
+          launchViewer(urn);
+        } else {
+          $("#forgeViewer").html(
+            'The translation job is still running: ' +
+            res.progress +
+            '. Please try again in a moment.'
+          );
+        }
+      },
+      error: showNotYetTranslated
+    });
+  })
+}
+function nodeActivated(evt, data) {
+  if (data != null && data.node != null){
+    if(data.node.type == 'object') {
+      objectNodeActivated(data.node);
+    }
+  }
+}
+
 function prepareAppBucketTree() {
   $('#appBuckets').jstree({
     'core': {
@@ -90,62 +151,12 @@ function prepareAppBucketTree() {
         }
       }
     },
-    'types': {
-      'default': {
-        'icon': 'glyphicon glyphicon-question-sign'
-      },
-      '#': {
-        'icon': 'glyphicon glyphicon-cloud'
-      },
-      'bucket': {
-        'icon': 'glyphicon glyphicon-folder-open'
-      },
-      'object': {
-        'icon': 'glyphicon glyphicon-file'
-      }
-    },
+    'types': nodeTypesIcons,
     "plugins": ["types", "state", "sort", "contextmenu"],
     contextmenu: { items: autodeskCustomMenu }
   }).on('loaded.jstree', function () {
     $('#appBuckets').jstree('open_all');
-  }).bind("activate_node.jstree", function (evt, data) {
-    if (data != null && data.node != null && data.node.type == 'object') {
-      $("#forgeViewer").empty();
-      var urn = data.node.id;
-      getForgeToken(function (access_token) {
-        const url = 
-          'https://developer.api.autodesk.com/modelderivative/v2/designdata/' +
-          urn +
-          '/manifest';
-        jQuery.ajax({
-          url: url,
-          headers: { 'Authorization': 'Bearer ' + access_token },
-          success: function (res) {
-            if (res.progress === 'success' || res.progress === 'complete') {
-              launchViewer(urn);
-            } else {
-              $("#forgeViewer").html(
-                'The translation job is still running: ' +
-                res.progress +
-                '. Please try again in a moment.'
-              );
-            }
-          },
-          error: function (err) {
-            var msgButton = 'This file is not translated yet! ' +
-              '<button ' +
-              'class="btn btn-xs btn-info" ' + 
-              'onclick="translateObject()"' + 
-              '>' + 
-              '<span class="glyphicon glyphicon-eye-open"></span> ' +
-              'Start translation' + 
-              '</button>'
-            $("#forgeViewer").html(msgButton);
-          }
-        });
-      })
-    }
-  });
+  }).bind("activate_node.jstree", nodeActivated);
 }
 
 function autodeskCustomMenu(autodeskNode) {
@@ -179,7 +190,15 @@ function autodeskCustomMenu(autodeskNode) {
             translateObject(treeNode);
           },
           icon: 'glyphicon glyphicon-eye-open'
-        }
+        },
+        deleteFile: {
+          label: "Delete",
+          action: function () {
+            var treeNode = $('#appBuckets').jstree(true).get_selected(true)[0];
+            deleteObject(treeNode);
+          },
+          icon: 'glyphicon glyphicon-trash'
+        },
       };
       break;
   }
@@ -217,15 +236,48 @@ function deleteBucket() {
 
 function translateObject(node) {
   $("#forgeViewer").empty();
-  if (node == null) node = $('#appBuckets').jstree(true).get_selected(true)[0];
+  if (node == null) {
+    node = $('#appBuckets').jstree(true).get_selected(true)[0];
+  }
   var bucketKey = node.parents[0];
-  var objectKey = node.id;
+  var objectName = node.id;
   jQuery.post({
     url: '/api/forge/modelderivative/jobs',
     contentType: 'application/json',
-    data: JSON.stringify({ 'bucketKey': bucketKey, 'objectName': objectKey }),
+    data: JSON.stringify({ 'bucketKey': bucketKey, 'objectName': objectName }),
     success: function (res) {
       $("#forgeViewer").html('Translation started! Please try again in a moment.');
     },
   });
+}
+
+function deleteObject(node) {
+  if (node == null) {
+    node = $('#appBuckets').jstree(true).get_selected(true)[0];
+  }
+  if(node.type == 'object'){
+    var bucketKey = node.parents[0];
+    // in router.get('/buckets'.., we put object.objectKey as node.text
+    var objectName = node.text;
+    var _this = this;
+    const url = '/api/forge/oss/delobject?bucketKey=' + 
+      bucketKey + 
+      '&objectName=' + 
+      objectName;
+    $.ajax({
+      url: url,
+      processData: false,
+      contentType: false,
+      type: 'POST',
+      success: function (data) {
+        // console.log('success reported from deleting object ' + node.id);
+        $('#appBuckets').jstree(true).refresh();
+        $("#forgeViewer").empty();
+        _this.value = '';
+      },
+      error: function (err) {
+        console.log(err);
+      }          
+    });
+  }
 }

@@ -79,6 +79,16 @@ router.get('/buckets', async (req, res, next) => {
         req.oauth_token,
       );
       res.json(objects.body.items.map((object) => {
+        /*
+        console.log(
+          'from getObjects, in \nbucket_name = ' + 
+          bucket_name + 
+          '\ngot object.objectKey = ' + 
+          object.objectKey +
+          '\ngot object = ' +
+          JSON.stringify(object)
+        );
+        */
         return {
           id: Buffer.from(object.objectId).toString('base64'),
           text: object.objectKey,
@@ -178,6 +188,46 @@ router.post('/objects', multer({ dest: 'uploads/' }).single('fileToUpload'), asy
       next(err);
     }
   });
+});
+
+// POST /api/forge/oss/delobject - deletes an object.
+// Request body must be a valid JSON in the form of 
+// { "bucketKey": "<bucket_name>", "objectName": "<object_name>" }.
+router.post('/delobject', async (req, res, next) => {
+  try {
+    // Delete an object using 
+    // [ObjectsApi](https://github.com/Autodesk-Forge/forge-api-nodejs-client/blob/408551fe4737b2321577329b505e29cdafaa13c8/docs/ObjectsApi.md#deleteObject).
+   
+    /*
+    const getCircularReplacer = () => {
+      const seen = new WeakSet();
+      return (key, value) => {
+        if (typeof value === "object" && value !== null) {
+          if (seen.has(value)) {
+            return;
+          }
+          seen.add(value);
+        }
+        return value;
+      };
+    };
+    console.log('go to delete object with req '+ 
+      JSON.stringify(req, getCircularReplacer()));
+    */
+    // console.log('go to delete object using ObjectsApi');
+    // console.log('req.query.bucketKey = ' + req.query.bucketKey);
+    // console.log('req.query.objectName = ' + req.query.objectName);
+    await new ObjectsApi().deleteObject(
+      req.query.bucketKey, 
+      req.query.objectName, 
+      req.oauth_client, 
+      req.oauth_token,
+    );
+    // no error thrown
+    res.status(200).end();
+  } catch (err) {
+    next(err);
+  }
 });
 
 module.exports = router;

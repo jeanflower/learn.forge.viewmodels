@@ -77,7 +77,8 @@ function createNewBucket() {
   });
 }
 
-function showNotYetTranslated(err, viewerTag) {
+function showNotYetTranslated(err) {
+  // console.log('show button to trigger translation');
   var msgButton = 'This file is not translated yet! ' +
     '<button ' +
     'class="btn btn-xs btn-info" ' + 
@@ -86,7 +87,7 @@ function showNotYetTranslated(err, viewerTag) {
     '<span class="glyphicon glyphicon-eye-open"></span> ' +
     'Start translation' + 
     '</button>'
-  $(viewerTag).html(msgButton);
+  $(objectView).html(msgButton);
 }
 
 const nodeTypesIcons = {
@@ -103,44 +104,60 @@ const nodeTypesIcons = {
     'icon': 'glyphicon glyphicon-file'
   }
 };
-function showObjectView(viewData){
-  viewData.forEach(function(x){
-    const viewerTag = x.viewTag;
-    const urn = x.urn;
-    $(viewerTag).empty();
-    // console.log('showObjectView for urn = ' + urn + ' in element for tag = ' + viewerTag);
-    getForgeToken(function (access_token) {
-      const url = 
-        'https://developer.api.autodesk.com/modelderivative/v2/designdata/' +
-        urn +
-        '/manifest';
-      jQuery.ajax({
-        url: url,
-        headers: { 'Authorization': 'Bearer ' + access_token },
-        success: function (res) {
-          if (res.progress === 'success' || res.progress === 'complete') {
-            // console.log('launch a viewer in element for tag = ' + viewerTag);
-            launchViewer(urn, viewerTag);
-          } else {
-            $(viewerTag).html(
-              'The translation job is still running: ' +
-              res.progress +
-              '. Please try again in a moment.'
-            );
-          }
-        },
-        error: function(err) {
-          showNotYetTranslated(err, viewerTag) 
-        },
+
+
+function showObjectView(urns){
+  console.log('starting showObjectView');
+  var optionsForInitializer = {
+    env: 'AutodeskProduction',
+    getAccessToken: getForgeToken
+  };
+  Autodesk.Viewing.Initializer(optionsForInitializer, () => {
+    console.log('Initialized viewer OK');
+    viewer = new Autodesk.Viewing.GuiViewer3D(document.getElementById("objectView"));
+    viewer.start();
+    console.log('Started viewer');
+    console.log('loadIntoViewer for urns = ' + urns);
+    urns.forEach(function(urn){
+      getForgeToken(function (access_token) {
+        const url = 
+          'https://developer.api.autodesk.com/modelderivative/v2/designdata/' +
+          urn +
+          '/manifest';
+        jQuery.ajax({
+          url: url,
+          headers: { 'Authorization': 'Bearer ' + access_token },
+          success: function (res) {
+            if (res.progress === 'success' || res.progress === 'complete') {
+              console.log('load derivative of model in element');
+              loadIntoViewer(urn);
+            } else {
+              if(urns.length === 1){
+                console.log('report back translation-in-progress');
+                $(objectView).html(
+                  'The translation job is still running: ' +
+                  res.progress +
+                  '. Please try again in a moment.'
+                );
+              }
+            }
+          },
+          error: function(err) {
+            console.log('error from modelderivative');
+            if(urns.length === 1){
+              showNotYetTranslated(err);
+            }
+          },
+        });
       });
-    });
+  
+    })
   });
 }
 function objectNodeActivated(node){
-  // $("#forgeViewer").empty();
   $("#forgeViewer").html(
     `<div class="card">
-      <div class="card-header" data-toggle="tooltip">
+      <div class="card-header" id="objectViewHeader" data-toggle="tooltip">
         Objects
       </div>
       <div class="card-body" id="objectView">    
@@ -149,44 +166,35 @@ function objectNodeActivated(node){
     `
   );
   // console.log('node ' + JSON.stringify(node));
-  showObjectView([{urn:node.id, viewTag:'objectView'}]);
+  showObjectView([node.id]);
 }
 function bucketNodeActivated(node){
-  $("#forgeViewer").empty();
-  // console.log('clicked a bucket with' + JSON.stringify(node));
   $("#forgeViewer").html(
     `<div class="card">
-      <div class="card-header" data-toggle="tooltip">
+      <div class="card-header" id="objectViewHeader" data-toggle="tooltip">
         Objects
       </div>
-      <div class="card-body">
-        <div class="container-fluid fill">
-          <div class="row">
-            <div class="col-6 col-sm-3 fill" id="child0"></div>
-            <div class="col-6 col-sm-3 fill" id="child1"></div>
-            <div class="col-6 col-sm-3 fill" id="child2"></div>
-          </div>
-          <div class="row">
-            <div class="col-6 col-sm-3 fill" id="child3"></div>
-            <div class="col-6 col-sm-3 fill" id="child4"></div>
-          </div>
-        </div>
+      <div class="card-body" id="objectView">    
       </div>
-    </div>    
+    </div>
     `
   );
 
   var children = $("#appBuckets").jstree("get_children_dom",node);
-  // console.log('jstree node children[0] = ' + JSON.stringify(childrens[0]));
-  // console.log('jstree node children[0].innerText = ' + childrens[0].innerText);
-  // console.log('jstree node children[0].id = ' + childrens[0].id);
+  if(children.length > 0){
+    console.log('jstree node children[0] = ' + JSON.stringify(children[0]));
+    console.log('jstree node children[0].innerText = ' + children[0].innerText);
+    console.log('jstree node children[0].id = ' + children[0].id);
+  }
 
-  var viewData = Array.from({length:children.length},(v,k)=>k+1).map(function(i){
-    return {urn:children[i].id, viewTag:'child'+i}
+  var urns = Array.from({length:children.length},(v,k)=>k+1).map(function(i){
+    // console.log('i = ' + i);
+    return children[i-1].id;
   })
 
-  console.log('viewData is ' + JSON.stringify(viewData));
-  showObjectView(viewData);
+  console.log('urns = ' + urns);
+
+  showObjectView(urns);
 }
 function nodeActivated(evt, data) {
   if (data != null && data.node != null){
@@ -284,6 +292,7 @@ function deleteBucket() {
         success: function (data) {
           // console.log('success reported from deleting bucket ' + node.id);
           $('#appBuckets').jstree(true).refresh();
+          $("#forgeViewer").empty();
           _this.value = '';
         },
         error: function (err) {
@@ -295,7 +304,6 @@ function deleteBucket() {
 }
 
 function translateObject(node) {
-  $("#forgeViewer").empty();
   if (node == null) {
     node = $('#appBuckets').jstree(true).get_selected(true)[0];
   }

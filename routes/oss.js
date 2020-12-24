@@ -107,6 +107,7 @@ router.get('/buckets', async (req, res, next) => {
 // { "bucketKey": "<new_bucket_name>" }.
 router.post('/buckets', async (req, res, next) => {
   let payload = new PostBucketsPayload();
+  // make the bucketKey more likely to be unique
   payload.bucketKey = config.credentials.client_id.toLowerCase() + '-' + req.body.bucketKey;
   payload.policyKey = 'transient'; // expires in 24h
   try {

@@ -17,17 +17,17 @@
 /////////////////////////////////////////////////////////////////////
 var viewer;
 
-async function loadIntoViewer(urn) {
-  console.log('loadIntoViewer urn');
-  var documentId = 'urn:' + urn;
+async function loadIntoViewer(bucketObject) {
+  // console.log(`loadIntoViewer ${JSON.stringify(bucketObject)}`);
+  var documentId = 'urn:' + bucketObject.objectName;
   Autodesk.Viewing.Document.load(
     documentId, 
     function (doc){
-      console.log('onDocumentLoadSuccess');
+      console.log(`success loading ${bucketObject.friendlyName} into viewer`);
       return onDocumentLoadSuccess(doc, viewer);
     },
     function (err){
-      console.log('onDocumentLoadFailure');
+      console.log(`failed loading ${bucketObject.friendlyName} into viewer`);
       return onDocumentLoadFailure(err);
     },
   );
@@ -61,7 +61,7 @@ function onDocumentLoadFailure(viewerErrorCode) {
 function getForgeToken(callback) {
   fetch('/api/forge/oauth/token').then(res => {
     res.json().then(data => {
-      console.log('got token ok');
+      // console.log('got token ok');
       callback(data.access_token, data.expires_in);
     });
   });

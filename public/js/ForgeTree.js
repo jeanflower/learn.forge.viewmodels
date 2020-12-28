@@ -106,34 +106,37 @@ const nodeTypesIcons = {
 };
 
 
-function showObjectView(urns){
-  console.log('starting showObjectView');
+function showObjectView(bucketObjectArray){
+  // console.log('starting showObjectView');
   var optionsForInitializer = {
     env: 'AutodeskProduction',
     getAccessToken: getForgeToken
   };
   Autodesk.Viewing.Initializer(optionsForInitializer, () => {
-    console.log('Initialized viewer OK');
+    // suppress logs from THREE as they are cluttering up my console
+    THREE.log = ()=>{};
+
+    // console.log('Initialized viewer OK');
     viewer = new Autodesk.Viewing.GuiViewer3D(document.getElementById("objectView"));
     viewer.start();
-    console.log('Started viewer');
-    console.log('loadIntoViewer for urns = ' + urns);
-    urns.forEach(function(urn){
+    // console.log('Started viewer');
+    // console.log('loadIntoViewer for bucketObjectArray = ' + bucketObjectArray);
+    bucketObjectArray.forEach(function(bucketObject){
       getForgeToken(function (access_token) {
         const url = 
           'https://developer.api.autodesk.com/modelderivative/v2/designdata/' +
-          urn +
+          bucketObject.objectName +
           '/manifest';
         jQuery.ajax({
           url: url,
           headers: { 'Authorization': 'Bearer ' + access_token },
           success: function (res) {
             if (res.progress === 'success' || res.progress === 'complete') {
-              console.log('load derivative of model in element');
-              loadIntoViewer(urn);
+              // console.log('load derivative of model in element');
+              loadIntoViewer(bucketObject);
             } else {
-              if(urns.length === 1){
-                console.log('report back translation-in-progress');
+              console.log(`translation-in-progress for ${bucketObject.friendlyName}`);
+              if(bucketObjectArray.length === 1){
                 $(objectView).html(
                   'The translation job is still running: ' +
                   res.progress +
@@ -143,9 +146,18 @@ function showObjectView(urns){
             }
           },
           error: function(err) {
-            console.log('error from modelderivative');
-            if(urns.length === 1){
+            // console.log('error from modelderivative');
+            if(bucketObjectArray.length === 1){
               showNotYetTranslated(err);
+            } else {
+              // trigger translation (will need to refresh view to see it)
+              translateObject(
+                bucketObject.bucketKey, 
+                bucketObject.objectName, 
+                ()=>{
+                  console.log(`started translation of ${bucketObject.friendlyName}`);
+                },
+              );
             }
           },
         });
@@ -165,8 +177,13 @@ function objectNodeActivated(node){
     </div>
     `
   );
-  // console.log('node ' + JSON.stringify(node));
-  showObjectView([node.id]);
+  const bucketObject = {
+    bucketKey: node.parents[0],
+    objectName: node.id,
+    friendlyName: node.text,
+  }
+  // console.log('objectNodeActivated bucketObject ' + JSON.stringify(bucketObject));
+  showObjectView([bucketObject]);
 }
 function bucketNodeActivated(node){
   $("#forgeViewer").html(
@@ -180,21 +197,30 @@ function bucketNodeActivated(node){
     `
   );
 
+  // console.log(`bucket activated, node = ${JSON.stringify(node)}`);
+
   var children = $("#appBuckets").jstree("get_children_dom",node);
+  /*
   if(children.length > 0){
     console.log('jstree node children[0] = ' + JSON.stringify(children[0]));
     console.log('jstree node children[0].innerText = ' + children[0].innerText);
     console.log('jstree node children[0].id = ' + children[0].id);
   }
+  */
 
-  var urns = Array.from({length:children.length},(v,k)=>k+1).map(function(i){
+  var bucketObjectArray = Array.from({length:children.length},(v,k)=>k+1).map(function(i){
     // console.log('i = ' + i);
-    return children[i-1].id;
+    // console.log('bucketNodeActivated node ' + JSON.stringify(children[i-1]));
+    return {
+      bucketKey: node.id,
+      objectName: children[i-1].id,
+      friendlyName: children[i-1].innerText,
+    }
   })
 
-  console.log('urns = ' + urns);
+  // console.log('bucketObjectArray = ' + bucketObjectArray);
 
-  showObjectView(urns);
+  showObjectView(bucketObjectArray);
 }
 function nodeActivated(evt, data) {
   if (data != null && data.node != null){
@@ -255,7 +281,16 @@ function autodeskCustomMenu(autodeskNode) {
           label: "Translate",
           action: function () {
             var treeNode = $('#appBuckets').jstree(true).get_selected(true)[0];
-            translateObject(treeNode);
+            // console.log(`treeNode for translate is ${JSON.stringify(treeNode)}`);
+            var objectName = treeNode.id;
+            var bucketKey = treeNode.parents[0];
+            translateObject(
+              bucketKey, 
+              objectName,
+              ()=>{
+                $("#forgeViewer").html(`Translation of ${treeNode.text} started! Please refresh view in a moment.`);
+              },
+            );
           },
           icon: 'glyphicon glyphicon-eye-open'
         },
@@ -303,18 +338,23 @@ function deleteBucket() {
   }
 }
 
-function translateObject(node) {
-  if (node == null) {
-    node = $('#appBuckets').jstree(true).get_selected(true)[0];
+function translateObject(bucketKey, objectName, startTranslationCallback) {
+  if (bucketKey == undefined) {
+    const node = $('#appBuckets').jstree(true).get_selected(true)[0];
+    bucketKey = node.parents[0];
+    objectName = node.id;
+    startTranslationCallback = ()=>{
+      $("#forgeViewer").html(`Translation of ${node.text} started! Please refresh view in a moment.`);
+    };
   }
-  var bucketKey = node.parents[0];
-  var objectName = node.id;
+
+  // console.log(`for translation, need bucketKey \n${bucketKey}\n and objectName \n${objectName}\n`);
   jQuery.post({
     url: '/api/forge/modelderivative/jobs',
     contentType: 'application/json',
     data: JSON.stringify({ 'bucketKey': bucketKey, 'objectName': objectName }),
     success: function (res) {
-      $("#forgeViewer").html('Translation started! Please try again in a moment.');
+      startTranslationCallback();
     },
   });
 }

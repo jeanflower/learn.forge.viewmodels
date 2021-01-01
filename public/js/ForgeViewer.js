@@ -15,9 +15,8 @@
 // DOES NOT WARRANT THAT THE OPERATION OF THE PROGRAM WILL BE
 // UNINTERRUPTED OR ERROR FREE.
 /////////////////////////////////////////////////////////////////////
-var viewer;
 
-async function loadIntoViewer(bucketObject) {
+async function loadIntoViewer(bucketObject, viewer) {
   // console.log(`loadIntoViewer ${JSON.stringify(bucketObject)}`);
   var documentId = 'urn:' + bucketObject.objectName;
   Autodesk.Viewing.Document.load(

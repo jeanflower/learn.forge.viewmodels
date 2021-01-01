@@ -21,75 +21,7 @@ $(document).ready(function () {
   $('#refreshBuckets').click(function () {
     $('#appBuckets').jstree(true).refresh();
   });
-
-  $('#createNewBucket').click(function () {
-    createNewBucket();
-  });
-
-  $('#createBucketModal').on('shown.bs.modal', function () {
-    $("#newBucketKey").focus();
-  })
-
-  $('#hiddenUploadField').change(function () {
-    // console.log('hiddenUploadField has changed ');
-    var node = $('#appBuckets').jstree(true).get_selected(true)[0];
-    var _this = this;
-    if (_this.files.length == 0) return;
-    var file = _this.files[0];
-    switch (node.type) {
-      case 'bucket':
-        var formData = new FormData();
-        formData.append('fileToUpload', file);
-        formData.append('bucketKey', node.id);
-
-        $.ajax({
-          url: '/api/forge/oss/objects',
-          data: formData,
-          processData: false,
-          contentType: false,
-          type: 'POST',
-          success: function (data) {
-            $('#appBuckets').jstree(true).refresh_node(node);
-            _this.value = '';
-          }
-        });
-        break;
-    }
-  });
 });
-
-function createNewBucket() {
-  var bucketKey = $('#newBucketKey').val();
-  var policyKey = $('#newBucketPolicyKey').val();
-  jQuery.post({
-    url: '/api/forge/oss/buckets',
-    contentType: 'application/json',
-    data: JSON.stringify({ 'bucketKey': bucketKey, 'policyKey': policyKey }),
-    success: function (res) {
-      $('#appBuckets').jstree(true).refresh();
-      $('#createBucketModal').modal('toggle');
-    },
-    error: function (err) {
-      if (err.status == 409)
-        alert('Bucket already exists - 409: Duplicated')
-      console.log(err);
-    }
-  });
-}
-
-function showNotYetTranslated(err) {
-  // console.log('show button to trigger translation');
-  var msgButton = 'This file is not translated yet! ' +
-    '<button ' +
-    'class="btn btn-xs btn-info" ' + 
-    'onclick="translateObject()"' + 
-    '>' + 
-    '<span class="glyphicon glyphicon-eye-open"></span> ' +
-    'Start translation' + 
-    '</button>'
-  $(objectView).html(msgButton);
-}
-
 const nodeTypesIcons = {
   'default': {
     'icon': 'glyphicon glyphicon-question-sign'
@@ -105,20 +37,30 @@ const nodeTypesIcons = {
   }
 };
 
+let viewer;
 
-function showObjectView(bucketObjectArray){
+function showObjectView(
+  bucketObjectArray,
+  callback = (viewer)=>{},
+){
   // console.log('starting showObjectView');
   var optionsForInitializer = {
     env: 'AutodeskProduction',
     getAccessToken: getForgeToken
   };
-  Autodesk.Viewing.Initializer(optionsForInitializer, () => {
+  Autodesk.Viewing.Initializer(optionsForInitializer, async() => {
     // suppress logs from THREE as they are cluttering up my console
     THREE.log = ()=>{};
 
+    const container = document.getElementById("objectView");
+    if(container === null){
+      console.log(`element with id objectView not found`);
+      return;
+    }
+
     // console.log('Initialized viewer OK');
-    viewer = new Autodesk.Viewing.GuiViewer3D(document.getElementById("objectView"));
-    viewer.start();
+    viewer = new Autodesk.Viewing.GuiViewer3D(container);
+    await viewer.start();
     // console.log('Started viewer');
     // console.log('loadIntoViewer for bucketObjectArray = ' + bucketObjectArray);
     bucketObjectArray.forEach(function(bucketObject){
@@ -133,7 +75,7 @@ function showObjectView(bucketObjectArray){
           success: function (res) {
             if (res.progress === 'success' || res.progress === 'complete') {
               // console.log('load derivative of model in element');
-              loadIntoViewer(bucketObject);
+              loadIntoViewer(bucketObject, viewer);
             } else {
               console.log(`translation-in-progress for ${bucketObject.friendlyName}`);
               if(bucketObjectArray.length === 1){
@@ -146,26 +88,16 @@ function showObjectView(bucketObjectArray){
             }
           },
           error: function(err) {
-            // console.log('error from modelderivative');
-            if(bucketObjectArray.length === 1){
-              showNotYetTranslated(err);
-            } else {
-              // trigger translation (will need to refresh view to see it)
-              translateObject(
-                bucketObject.bucketKey, 
-                bucketObject.objectName, 
-                ()=>{
-                  console.log(`started translation of ${bucketObject.friendlyName}`);
-                },
-              );
-            }
+            console.log('error from modelderivative - maybe needs translating');
           },
         });
       });
-  
-    })
+    });
+    console.log(`pass viewer to callback : ${viewer}`);
+    await callback(viewer);
   });
 }
+
 function objectNodeActivated(node){
   $("#forgeViewer").html(
     `<div class="card">
@@ -185,49 +117,11 @@ function objectNodeActivated(node){
   // console.log('objectNodeActivated bucketObject ' + JSON.stringify(bucketObject));
   showObjectView([bucketObject]);
 }
-function bucketNodeActivated(node){
-  $("#forgeViewer").html(
-    `<div class="card">
-      <div class="card-header" id="objectViewHeader" data-toggle="tooltip">
-        Objects
-      </div>
-      <div class="card-body" id="objectView">    
-      </div>
-    </div>
-    `
-  );
 
-  // console.log(`bucket activated, node = ${JSON.stringify(node)}`);
-
-  var children = $("#appBuckets").jstree("get_children_dom",node);
-  /*
-  if(children.length > 0){
-    console.log('jstree node children[0] = ' + JSON.stringify(children[0]));
-    console.log('jstree node children[0].innerText = ' + children[0].innerText);
-    console.log('jstree node children[0].id = ' + children[0].id);
-  }
-  */
-
-  var bucketObjectArray = Array.from({length:children.length},(v,k)=>k+1).map(function(i){
-    // console.log('i = ' + i);
-    // console.log('bucketNodeActivated node ' + JSON.stringify(children[i-1]));
-    return {
-      bucketKey: node.id,
-      objectName: children[i-1].id,
-      friendlyName: children[i-1].innerText,
-    }
-  })
-
-  // console.log('bucketObjectArray = ' + bucketObjectArray);
-
-  showObjectView(bucketObjectArray);
-}
 function nodeActivated(evt, data) {
   if (data != null && data.node != null){
     if(data.node.type == 'object') {    
       objectNodeActivated(data.node);
-    } else if(data.node.type == 'bucket') {
-      bucketNodeActivated(data.node);
     }
   }
 }
@@ -259,48 +153,65 @@ function autodeskCustomMenu(autodeskNode) {
   switch (autodeskNode.type) {
     case "bucket":
       items = {
-        uploadFile: {
-          label: "Upload file",
-          action: function () {
-            uploadFile();
-          },
-          icon: 'glyphicon glyphicon-cloud-upload'
-        },
-        deleteBucket: {
-          label: "Delete bucket",
-          action: function () {
-            deleteBucket();
-          },
-          icon: 'glyphicon glyphicon-trash'
-        },
       };
       break;
     case "object":
       items = {
-        translateFile: {
-          label: "Translate",
+        addGeometry: {
+          label: "Add Geometry",
           action: function () {
-            var treeNode = $('#appBuckets').jstree(true).get_selected(true)[0];
-            // console.log(`treeNode for translate is ${JSON.stringify(treeNode)}`);
-            var objectName = treeNode.id;
-            var bucketKey = treeNode.parents[0];
-            translateObject(
-              bucketKey, 
-              objectName,
-              ()=>{
-                $("#forgeViewer").html(`Translation of ${treeNode.text} started! Please refresh view in a moment.`);
-              },
-            );
+            addGeometryToObject();
           },
-          icon: 'glyphicon glyphicon-eye-open'
+          icon: 'glyphicon glyphicon-plus-sign'
         },
-        deleteFile: {
-          label: "Delete",
+        edit2DpolygonTool: {
+          label: "Edit 2d polygonTool",
           action: function () {
-            var treeNode = $('#appBuckets').jstree(true).get_selected(true)[0];
-            deleteObject(treeNode);
+            draw2DEdit('polygonTool');
           },
-          icon: 'glyphicon glyphicon-trash'
+          icon: 'glyphicon glyphicon-plus-sign'
+        },   
+        edit2DpolylineTool: {
+          label: "Edit 2d polylineTool",
+          action: function () {
+            draw2DEdit('polylineTool');
+          },
+          icon: 'glyphicon glyphicon-plus-sign'
+        },   
+        edit2DmoveTool: {
+          label: "Edit 2d moveTool",
+          action: function () {
+            draw2DEdit('moveTool');
+          },
+          icon: 'glyphicon glyphicon-plus-sign'
+        },   
+        edit2DpolygonEditTool: {
+          label: "Edit 2d polygonEditTool",
+          action: function () {
+            draw2DEdit('polygonEditTool');
+          },
+          icon: 'glyphicon glyphicon-plus-sign'
+        },   
+        edit2DinsertSymbolTool: {
+          label: "Edit 2d insertSymbolTool",
+          action: function () {
+            draw2DEdit('insertSymbolTool');
+          },
+          icon: 'glyphicon glyphicon-plus-sign'
+        },   
+        edit2DcopyTool: {
+          label: "Edit 2d copyTool",
+          action: function () {
+            draw2DEdit('copyTool');
+          },
+          icon: 'glyphicon glyphicon-plus-sign'
+        },
+        edit2DshowSvgPopup: {
+          label: "Edit 2d showSvgPopup",
+          action: function () {
+            showSvgPopup();
+          },
+          icon: 'glyphicon glyphicon-plus-sign'
         },
       };
       break;
@@ -309,83 +220,237 @@ function autodeskCustomMenu(autodeskNode) {
   return items;
 }
 
-function uploadFile() {
-  $('#hiddenUploadField').click();
+function addRedBox(modelBuilder, dbId) {
+  const boxGeometry = new THREE.BufferGeometry().fromGeometry(new THREE.BoxGeometry(10, 10, 10));
+  const boxMaterial = new THREE.MeshPhongMaterial({ color: new THREE.Color(1, 0, 0) });
+  const boxMesh = new THREE.Mesh(boxGeometry, boxMaterial);
+  boxMesh.matrix = new THREE.Matrix4().compose(
+    new THREE.Vector3(-10, -10, 0),
+    new THREE.Quaternion(0, 0, 0, 1),
+    new THREE.Vector3(1, 1, 1)
+  );
+  boxMesh.dbId = dbId;
+  modelBuilder.addMesh(boxMesh);
 }
 
-function deleteBucket() {
-  var node = $('#appBuckets').jstree(true).get_selected(true)[0];
-  var _this = this;
-  switch (node.type) {
-    case 'bucket':
-      // console.log('we want to delete bucket ' + node.id);
-      $.ajax({
-        url: '/api/forge/oss/delbucket?' + $.param({"bucketKey": node.id}),
-        processData: false,
-        contentType: false,
-        type: 'POST',
-        success: function (data) {
-          // console.log('success reported from deleting bucket ' + node.id);
-          $('#appBuckets').jstree(true).refresh();
-          $("#forgeViewer").empty();
-          _this.value = '';
-        },
-        error: function (err) {
-          console.log(err);
-        }          
-      });
-      break;
+function addGreenSphere(modelBuilder, dbId) {
+  const sphereGeometry = new THREE.BufferGeometry().fromGeometry(new THREE.SphereGeometry(5, 8, 8));
+  const sphereMaterial = new THREE.MeshPhongMaterial({ color: new THREE.Color(0, 1, 0) });
+  const sphereTransform = new THREE.Matrix4().compose(
+    new THREE.Vector3(0, 0, 0),
+    new THREE.Quaternion(0, 0, 0, 1),
+    new THREE.Vector3(1, 1, 1)
+  );
+  const sphereFragId = modelBuilder.addFragment(sphereGeometry, sphereMaterial, sphereTransform);
+  modelBuilder.changeFragmentsDbId(sphereFragId, dbId);
+}
+
+function addBlueCyl(modelBuilder, dbId) {
+  const cylinderGeometry = new THREE.BufferGeometry().fromGeometry(new THREE.CylinderGeometry(5, 5, 10));
+  const cylinderMaterial = new THREE.MeshPhongMaterial({ color: new THREE.Color(0, 0, 1) });
+  const cylinderTransform = new THREE.Matrix4().compose(
+    new THREE.Vector3(+10, +10, 0),
+    new THREE.Quaternion(0, 0, 0, 1),
+    new THREE.Vector3(1, 1, 1)
+  );
+  modelBuilder.addMaterial('MyCustomMaterial', cylinderMaterial);
+  const cylinderGeomId = modelBuilder.addGeometry(cylinderGeometry);
+  const cylinderFragId = modelBuilder.addFragment(cylinderGeomId, 'MyCustomMaterial', cylinderTransform);
+  modelBuilder.changeFragmentsDbId(cylinderFragId, dbId);
+}
+
+// see https://forge.autodesk.com/blog/custom-models-forge-viewer
+// for inspiration
+async function addGeometryToObject() {
+ 
+  if(viewer === undefined){
+    console.log(`viewer is undefined, can't add geometry`);
+    return;
+  }
+  console.log(`viewer is defined, start to add geometry`);
+  const sceneBuilder = await viewer.loadExtension('Autodesk.Viewing.SceneBuilder');
+  const modelBuilder = await sceneBuilder.addNewModel({ 
+    conserveMemory: false, 
+    modelNameOverride: 'My Custom Model', // where is this used?
+  }); 
+  addRedBox(modelBuilder, 123456);
+  addGreenSphere(modelBuilder, 123456);
+  addBlueCyl(modelBuilder, 456789);
+  console.log(`modelBuilder.model = ${modelBuilder.model}`);
+  viewer.fitToView([123456], modelBuilder.model);
+}
+
+// from https://forge.autodesk.com/en/docs/viewer/v7/developers_guide/advanced_options/edit2d-setup/
+async function draw2DEdit(toolName){
+
+  // Load Edit2D extension
+  const options = {
+    // If true, PolygonTool will create Paths instead of just Polygons. This allows to change segments to arcs.
+    enableArcs: true
+  };
+
+  console.log('load Edit2D extension');
+  const edit2d = await viewer.loadExtension('Autodesk.Edit2D');
+
+  // Register all standard tools in default configuration
+  edit2d.registerDefaultTools();
+
+
+
+
+  // Code follows example above
+
+  const ctx = edit2d.defaultContext;
+
+  // {EditLayer} Edit layer containing your shapes
+  ctx.layer
+
+  // {EditLayer} An additional layer used by tools to display temporary shapes (e.g. dashed lines for snapping etc.)
+  ctx.gizmoLayer
+
+  // {UndoStack} Manages all modifications and tracks undo/redo history
+  ctx.undoStack
+
+  // {Selection} Controls selection and hovering highlight
+  ctx.selection
+
+  // {Edit2DSnapper} Edit2D snapper
+  ctx.snapper
+
+
+  // Facilitate access to extension and layer
+  window.edit2d = NOP_VIEWER.getExtension('Autodesk.Edit2D');
+  console.log('picked up the extension');
+
+  window.layer  = edit2d.defaultContext.layer;
+  window.tools  = edit2d.defaultTools;
+
+  // Convenience function for tool switching per console. E.g. startTool(tools.polygonTool)
+  var startTool = function(tool) {
+    const getCircularReplacer = () => {
+      const seen = new WeakSet();
+      return (key, value) => {
+        if (typeof value === "object" && value !== null) {
+          if (seen.has(value)) {
+            return "repeated";
+          }
+          seen.add(value);
+        }
+        return value;
+      };
+    }; 
+    console.log(`in startTool with tool = ${JSON.stringify(tool, getCircularReplacer)}`);
+
+    var controller = NOP_VIEWER.toolController;
+
+    // Check if currently active tool is from Edit2D
+    var activeTool = controller.getActiveTool();
+    var isEdit2D = activeTool && activeTool.getName().startsWith("Edit2");
+
+    // deactivate any previous edit2d tool
+    if (isEdit2D) {
+      console.log(`there's a previous tool`);
+      controller.deactivateTool(activeTool.getName());
+      activeTool = null;
+    }
+
+    var box = NOP_VIEWER.model.getBoundingBox();  // typo in tutorial
+
+    // Create simple triangle
+    var poly = new Autodesk.Edit2D.Polygon([
+      {x: 53, y: 24},
+      {x: 62, y: 24},
+      {x: 57, y: 34}
+    ]);
+
+    // Show it
+    layer.addShape(poly);
+
+    controller.activateTool(tool.getName());
+
+    // stop editing tools
+    if (!tool) {
+      console.log('stop this tool');
+      return;
+    }
+  }
+
+  console.log(`tools.polygonTool = ${Object.getOwnPropertyNames(tools)}`);  
+  //console.log(`window.tools = ${JSON.stringify(window.tools, getCircularReplacer)}`);
+
+  if( toolName === 'polygonTool'){
+    startTool(window.tools.polygonTool); // typo in tutorial
+  } else if( toolName === 'polylineTool'){
+    startTool(window.tools.polylineTool);
+  } else if( toolName === 'moveTool'){
+    startTool(window.tools.moveTool);
+  } else if( toolName === 'polygonEditTool'){
+    startTool(window.tools.polygonEditTool);
+  } else if( toolName === 'insertSymbolTool'){
+    startTool(window.tools.insertSymbolTool);
+  } else if( toolName === 'copyTool'){
+    startTool(window.tools.copyTool);
+  } else  {
+    aert(`tool name ${toolName} not recognised`);
   }
 }
 
-function translateObject(bucketKey, objectName, startTranslationCallback) {
-  if (bucketKey == undefined) {
-    const node = $('#appBuckets').jstree(true).get_selected(true)[0];
-    bucketKey = node.parents[0];
-    objectName = node.id;
-    startTranslationCallback = ()=>{
-      $("#forgeViewer").html(`Translation of ${node.text} started! Please refresh view in a moment.`);
-    };
-  }
+function showSvgPopup() {
 
-  // console.log(`for translation, need bucketKey \n${bucketKey}\n and objectName \n${objectName}\n`);
-  jQuery.post({
-    url: '/api/forge/modelderivative/jobs',
-    contentType: 'application/json',
-    data: JSON.stringify({ 'bucketKey': bucketKey, 'objectName': objectName }),
-    success: function (res) {
-      startTranslationCallback();
-    },
+  // window size
+  const width = 400;
+  const height = 400;
+
+  // define pixel-scope as box2
+  const pixelBox = new THREE.Box2();
+  pixelBox.min.set(0, 0);
+  pixelBox.max.set(width, height);
+
+
+  const ctx = edit2d.defaultContext;
+  const layer = ctx.layer
+
+  console.log(`layer.shapes[0] = ${JSON.stringify(layer.shapes[0])}`);
+
+  const augmentedShapes = layer.shapes.map((s)=>{
+    s.isBezierArc = (i,j)=>{return false;}
+    s.isEllipseArc = (i,j)=>{return false;}
+    return s;
   });
-}
 
-function deleteObject(node) {
-  if (node == null) {
-    node = $('#appBuckets').jstree(true).get_selected(true)[0];
-  }
-  if(node.type == 'object'){
-    var bucketKey = node.parents[0];
-    // in router.get('/buckets'.., we put object.objectKey as node.text
-    var objectName = node.text;
-    var _this = this;
-    const url = '/api/forge/oss/delobject?bucketKey=' + 
-      bucketKey + 
-      '&objectName=' + 
-      objectName;
-    $.ajax({
-      url: url,
-      processData: false,
-      contentType: false,
-      type: 'POST',
-      success: function (data) {
-        // console.log('success reported from deleting object ' + node.id);
-        $('#appBuckets').jstree(true).refresh();
-        $("#forgeViewer").empty();
-        _this.value = '';
-      },
-      error: function (err) {
-        console.log(err);
-      }          
-    });
-  }
-}
+  augmentedShapes.forEach((s)=>{
+    for (let l=0; l<s.loopCount; l++) {
+        const points = s._loops[l];
+
+        for (let i=0; i<points.length; i++) {
+            const p = points[i];
+
+            // transform Bezier control points
+            if (s.isBezierArc(i, l)) {                
+              console.log('bezier');
+            } else {
+              console.log('not bezier');
+            }
+
+            // Transform ellipse arcs
+            // Note: Currently, this only works for simple transforms (translate, rotate, uniform scale)
+            if (s.isEllipseArc(i, l)) {
+              console.log('ellipse');
+            } else {
+              console.log('not ellipse');
+            }
+        }
+    }
+  });
+
+  // convert layer to svg element
+  const svg = Autodesk.Edit2D.Svg.createSvgElement(
+    augmentedShapes,
+    { dstBox: pixelBox } // rescale to fit pixelBox [0,400]^2
+  );
+
+  // show in popup window
+  const w = window.open('', '', `width=${width},height=${height}`);
+  w.document.body.appendChild(svg);
+  w.document.close();
+};
